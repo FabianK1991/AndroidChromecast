@@ -27,22 +27,34 @@ import com.android.volley.VolleyError;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
+
+import io.reactivex.BackpressureStrategy;
+import io.reactivex.Flowable;
+import io.reactivex.FlowableEmitter;
 import io.reactivex.Observable;
 import io.reactivex.ObservableSource;
 import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.CompositeDisposable;
 import io.reactivex.observers.DisposableObserver;
 import io.reactivex.schedulers.Schedulers;
+
+import java.util.NoSuchElementException;
 import java.util.concurrent.Callable;
 
 public class MainActivity extends Activity {
     private static final String TAG = "RxAndroidSamples";
 
     private final CompositeDisposable disposables = new CompositeDisposable();
+    private RequestQueue queue;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        queue = Volley.newRequestQueue(this);
         setContentView(R.layout.main_activity);
+
         findViewById(R.id.button_run_scheduler).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 onRunSchedulerExampleButtonClicked();
@@ -58,54 +70,52 @@ public class MainActivity extends Activity {
     void onRunSchedulerExampleButtonClicked() {
         final TextView mTextView = findViewById(R.id.textView);
 
-        // Instantiate the RequestQueue.
-        RequestQueue queue = Volley.newRequestQueue(this);
-        String url ="http://www.google.com";
-
-        // Request a string response from the provided URL.
-        StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
-                new Response.Listener<String>() {
+        sampleObservable(this, "http://www.google.com")
+                // Run on a background thread
+                .subscribeOn(Schedulers.io())
+                // Be notified on the main thread
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(new Subscriber<String>() {
                     @Override
-                    public void onResponse(String response) {
-                        // Display the first 500 characters of the response string.
-                        mTextView.setText("Response is: "+ response.substring(0,500));
+                    public void onSubscribe(Subscription s) {
+                        s.request(Long.MAX_VALUE);
                     }
-                }, new Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error) {
-                mTextView.setText("That didn't work!");
-            }
-        });
-        // Add the request to the RequestQueue.
-        queue.add(stringRequest);
 
-        disposables.add(sampleObservable()
-            // Run on a background thread
-            .subscribeOn(Schedulers.io())
-            // Be notified on the main thread
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribeWith(new DisposableObserver<String>() {
-                @Override public void onComplete() {
-                    Log.d(TAG, "onComplete()");
-                }
+                    public void onNext(String t) {
+                        mTextView.setText(t);
+                    }
 
-                @Override public void onError(Throwable e) {
-                    Log.e(TAG, "onError()", e);
-                }
+                    public void onError(Throwable e) {
+                        mTextView.setText(e.getMessage());
+                    }
 
-                @Override public void onNext(String string) {
-                    Log.d(TAG, "onNext(" + string + ")");
-                }
-            }));
+                    public void onComplete() {
+
+                    }
+                });
     }
 
-    static Observable<String> sampleObservable() {
-        return Observable.defer(new Callable<ObservableSource<? extends String>>() {
-          @Override public ObservableSource<? extends String> call() throws Exception {
-                // Do some long running operation
-                SystemClock.sleep(5000);
-                return Observable.just("one", "two", "three", "four", "five");
-            }
-        });
+    static Flowable<String> sampleObservable(final MainActivity mainActivity, final String url) {
+        return Flowable.create((FlowableEmitter<String> emitter) -> {
+            // Request a string response from the provided URL.
+            StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
+                    new Response.Listener<String>() {
+                        @Override
+                        public void onResponse(String response) {
+                            // Display the first 500 characters of the response string.
+                            //mTextView.setText("Response is: "+ response.substring(0,500));
+                            emitter.onNext(response);
+                            emitter.onComplete();
+                        }
+                    }, new Response.ErrorListener() {
+                @Override
+                public void onErrorResponse(VolleyError error) {
+                    emitter.onError(error);
+                }
+            });
+
+            // Add the request to the RequestQueue.
+            mainActivity.queue.add(stringRequest);
+        }, BackpressureStrategy.BUFFER);
     }
 }

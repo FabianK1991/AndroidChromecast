@@ -15,12 +15,13 @@ subprojects {
 
     repositories {
         mavenCentral()
+        jcenter()
     }
 }
 
 ext {
     minSdkVersion = 9
     compileSdkVersion = 26
-    buildToolsVersion = '26.0.2'
+    buildToolsVersion = '27.0.3'
     sourceCompatibility = JavaVersion.VERSION_1_7
 }
